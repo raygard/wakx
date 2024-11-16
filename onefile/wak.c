@@ -338,11 +338,9 @@ ssize_t getdelim(char ** restrict lineptr, size_t * restrict n, int delimiter, F
 #ifndef FOR_TOYBOX
 
 // Common (global) data
-static struct global_data TT;
 struct optflags {
   char FLAG_b;
 };
-static struct optflags optflags;
 #define FLAG(x) (optflags.FLAG_##x)
 #endif  // FOR_TOYBOX
 

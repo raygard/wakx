@@ -12,7 +12,7 @@ CC = gcc
 
 MUSLCC = /usr/local/musl/bin/musl-gcc
 
-CFLAGS = -O3 -funsigned-char -std=c99 -Wall -Wextra -W -Wpointer-arith -Wstrict-prototypes -D_POSIX_C_SOURCE=200809L 
+CFLAGS = -O3 -funsigned-char -std=c99 -Wall -Wextra -W -Wpointer-arith -Wstrict-prototypes -D_POSIX_C_SOURCE=200809L
 
 # Order is significant for monolithic source wak.c and toybox awk!
 SRC = ./src/lib.c ./src/common.c ./src/scan.c ./src/compile.c ./src/run.c ./src/main.c
@@ -86,9 +86,12 @@ win windows: ./wak.exe
 
 toy: ./toybox/awk
 
+# sed here reverts change made for clang warning about "string" + int
+# toybox maintainer R. Landley prefers "string" + int over &("string"[int])
 ./toybox/awk: ./onefile/wak.c
 	@mkdir -p $(@D)
-	awk -f ./scripts/make_toybox_awk.awk ./onefile/wak.c > $@.c
+	awk -f ./scripts/make_toybox_awk.awk ./onefile/wak.c | \
+		sed -e 's/\&(\("[^"]*"\)\[\([^]]*\)\]);.*/\1 + \2;/' > $@.c
 
 clean:
 	-rm wak prwak aswak mwak muwak mmuwak
