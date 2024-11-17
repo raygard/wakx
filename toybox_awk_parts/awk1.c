@@ -84,11 +84,11 @@ GLOBALS(
   struct zvalue {
     unsigned flags;
     double num;
-    union { // anonymous union not in C99; not going to fix it now.
+    union {
       struct zstring *vst;
       struct zmap *map;
       regex_t *rx;
-    };
+    } u;
   } nozvalue;   // to shut up compiler warning TODO FIXME
 
   struct runtime_globals {

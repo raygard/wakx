@@ -131,7 +131,7 @@ struct zvalue {
     struct zstring *vst;
     struct zmap *map;
     regex_t *rx;
-  };
+  } u;
 };
 
 struct runtime_globals {

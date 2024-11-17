@@ -221,7 +221,7 @@ EXTERN struct zvalue new_str_val(char *s)
 
 EXTERN void zvalue_release_zstring(struct zvalue *v)
 {
-  if (v && ! (v->flags & (ZF_ANYMAP | ZF_RX))) zstring_release(&v->vst);
+  if (v && ! (v->flags & (ZF_ANYMAP | ZF_RX))) zstring_release(&v->u.vst);
 }
 
 // push_val() is used for initializing globals (see init_compiler())
@@ -232,7 +232,7 @@ EXTERN void zvalue_release_zstring(struct zvalue *v)
 // pushed, invalidating the v pointer.
 EXTERN void push_val(struct zvalue *v)
 {
-  if (IS_STR(v) && v->vst) v->vst->refcnt++;  // inlined zstring_incr_refcnt()
+  if (IS_STR(v) && v->u.vst) v->u.vst->refcnt++;  // inlined zstring_incr_refcnt()
   *++TT.stackp = *v;
 }
 
@@ -242,15 +242,15 @@ EXTERN void zvalue_copy(struct zvalue *to, struct zvalue *from)
   else {
     zvalue_release_zstring(to);
     *to = *from;
-    zstring_incr_refcnt(to->vst);
+    zstring_incr_refcnt(to->u.vst);
   }
 }
 
 EXTERN void zvalue_dup_zstring(struct zvalue *v)
 {
-  struct zstring *z = new_zstring(v->vst->str, v->vst->size);
-  zstring_release(&v->vst);
-  v->vst = z;
+  struct zstring *z = new_zstring(v->u.vst->str, v->u.vst->size);
+  zstring_release(&v->u.vst);
+  v->u.vst = z;
 }
 
 ////////////////////
@@ -325,7 +325,7 @@ EXTERN void zvalue_map_init(struct zvalue *v)
 {
   struct zmap *m = xmalloc(sizeof(*m));
   zmap_init(m);
-  v->map = m;
+  v->u.map = m;
   v->flags |= ZF_MAP;
 }
 
@@ -333,7 +333,7 @@ EXTERN void zmap_delete_map_incl_slotdata(struct zmap *m)
 {
   for (struct zmap_slot *p = &MAPSLOT[0]; p < &MAPSLOT[zlist_len(&m->slot)]; p++) {
     if (p->key) zstring_release(&p->key);
-    if (p->val.vst) zstring_release(&p->val.vst);
+    if (p->val.u.vst) zstring_release(&p->val.u.vst);
   }
   xfree(m->slot.base);
   xfree(m->hash);

@@ -57,7 +57,7 @@ static int make_literal_regex_val(char *s)
   rx = xmalloc(sizeof(*rx));
   xregcomp(rx, s, REG_EXTENDED);
   struct zvalue v = ZVINIT(ZF_RX, 0, 0);
-  v.rx = rx;
+  v.u.rx = rx;
   // Flag empty rx to make it easy to identify for split() special case
   if (!*s) v.flags |= ZF_EMPTY_RX;
   return zlist_append(&TT.literals, &v);
@@ -173,7 +173,7 @@ static void init_tables(void)
   zlist_append(&TT.literals, &uninit_zvalue);
   zlist_append(&TT.stack, &uninit_zvalue);
   zlist_append(&TT.fields, &uninit_zvalue);
-  FIELD[0].vst = new_zstring("", 0);
+  FIELD[0].u.vst = new_zstring("", 0);
 }
 
 static void init_compiler(void)

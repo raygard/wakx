@@ -88,10 +88,13 @@ toy: ./toybox/awk
 
 # sed here reverts change made for clang warning about "string" + int
 # toybox maintainer R. Landley prefers "string" + int over &("string"[int])
+# also: second line of sed command reverts the anonymous union removal
+# (i.e. restores the anonymous union in struct zvalue for toybox\awk.c)
 ./toybox/awk: ./onefile/wak.c
 	@mkdir -p $(@D)
 	awk -f ./scripts/make_toybox_awk.awk ./onefile/wak.c | \
-		sed -e 's/\&(\("[^"]*"\)\[\([^]]*\)\]);.*/\1 + \2;/' > $@.c
+		sed -e 's/\&(\("[^"]*"\)\[\([^]]*\)\]);.*/\1 + \2;/' \
+		-e 's/\.u\././g' -e 's/->u./->/g' -e 's/} u;/};/' -e '/struct zvalue {/,/union/ s,union.*,union { // anonymous union not in C99; not going to fix it now.,' > $@.c
 
 clean:
 	-rm wak prwak aswak mwak muwak mmuwak

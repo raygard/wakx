@@ -120,7 +120,7 @@ struct zvalue {
     struct zstring *vst;
     struct zmap *map;
     regex_t *rx;
-  };
+  } u;
 };
 
 struct runtime_globals {
@@ -717,7 +717,7 @@ static struct zvalue new_str_val(char *s)
 
 static void zvalue_release_zstring(struct zvalue *v)
 {
-  if (v && ! (v->flags & (ZF_ANYMAP | ZF_RX))) zstring_release(&v->vst);
+  if (v && ! (v->flags & (ZF_ANYMAP | ZF_RX))) zstring_release(&v->u.vst);
 }
 
 // push_val() is used for initializing globals (see init_compiler())
@@ -728,7 +728,7 @@ static void zvalue_release_zstring(struct zvalue *v)
 // pushed, invalidating the v pointer.
 static void push_val(struct zvalue *v)
 {
-  if (IS_STR(v) && v->vst) v->vst->refcnt++;  // inlined zstring_incr_refcnt()
+  if (IS_STR(v) && v->u.vst) v->u.vst->refcnt++;  // inlined zstring_incr_refcnt()
   *++TT.stackp = *v;
 }
 
@@ -738,15 +738,15 @@ static void zvalue_copy(struct zvalue *to, struct zvalue *from)
   else {
     zvalue_release_zstring(to);
     *to = *from;
-    zstring_incr_refcnt(to->vst);
+    zstring_incr_refcnt(to->u.vst);
   }
 }
 
 static void zvalue_dup_zstring(struct zvalue *v)
 {
-  struct zstring *z = new_zstring(v->vst->str, v->vst->size);
-  zstring_release(&v->vst);
-  v->vst = z;
+  struct zstring *z = new_zstring(v->u.vst->str, v->u.vst->size);
+  zstring_release(&v->u.vst);
+  v->u.vst = z;
 }
 
 ////////////////////
@@ -821,7 +821,7 @@ static void zvalue_map_init(struct zvalue *v)
 {
   struct zmap *m = xmalloc(sizeof(*m));
   zmap_init(m);
-  v->map = m;
+  v->u.map = m;
   v->flags |= ZF_MAP;
 }
 
@@ -829,7 +829,7 @@ static void zmap_delete_map_incl_slotdata(struct zmap *m)
 {
   for (struct zmap_slot *p = &MAPSLOT[0]; p < &MAPSLOT[zlist_len(&m->slot)]; p++) {
     if (p->key) zstring_release(&p->key);
-    if (p->val.vst) zstring_release(&p->val.vst);
+    if (p->val.u.vst) zstring_release(&p->val.u.vst);
   }
   xfree(m->slot.base);
   xfree(m->hash);
@@ -1320,7 +1320,7 @@ static int make_literal_regex_val(char *s)
   rx = xmalloc(sizeof(*rx));
   xregcomp(rx, s, REG_EXTENDED);
   struct zvalue v = ZVINIT(ZF_RX, 0, 0);
-  v.rx = rx;
+  v.u.rx = rx;
   // Flag empty rx to make it easy to identify for split() special case
   if (!*s) v.flags |= ZF_EMPTY_RX;
   return zlist_append(&TT.literals, &v);
@@ -1436,7 +1436,7 @@ static void init_tables(void)
   zlist_append(&TT.literals, &uninit_zvalue);
   zlist_append(&TT.stack, &uninit_zvalue);
   zlist_append(&TT.fields, &uninit_zvalue);
-  FIELD[0].vst = new_zstring("", 0);
+  FIELD[0].u.vst = new_zstring("", 0);
 }
 
 static void init_compiler(void)
@@ -2675,8 +2675,8 @@ static void compile(void)
 
 static void check_numeric_string(struct zvalue *v)
 {
-  if (v->vst) {
-    char *end, *s = v->vst->str;
+  if (v->u.vst) {
+    char *end, *s = v->u.vst->str;
     // Significant speed gain with this test:
     // num string must begin space, +, -, ., or digit.
     if (strchr("+-.1234567890 ", *s)) {
@@ -2735,10 +2735,10 @@ static char *escape_str(char *s, int is_regex)
 static void force_maybemap_to_scalar(struct zvalue *v)
 {
   if (!(v->flags & ZF_ANYMAP)) return;
-  if (v->flags & ZF_MAP || v->map->count)
+  if (v->flags & ZF_MAP || v->u.map->count)
     FATAL("array in scalar context");
   v->flags = 0;
-  v->map = 0; // v->flags = v->map = 0 gets warning
+  v->u.map = 0; // v->flags = v->u.map = 0 gets warning
 }
 
 static void force_maybemap_to_map(struct zvalue *v)
@@ -2754,15 +2754,15 @@ static struct zvalue *to_str_fmt(struct zvalue *v, int fmt_offs)
   if (v->flags & ZF_NUMSTR) v->flags = ZF_STR;
   if (IS_STR(v)) return v;
   else if (!v->flags) { // uninitialized
-    v->vst = new_zstring("", 0);
+    v->u.vst = new_zstring("", 0);
   } else if (IS_NUM(v)) {
     zvalue_release_zstring(v);
     if (!IS_STR(&STACK[fmt_offs])) {
-      zstring_release(&STACK[fmt_offs].vst);
-      STACK[fmt_offs].vst = num_to_zstring(STACK[fmt_offs].num, "%.6g");
+      zstring_release(&STACK[fmt_offs].u.vst);
+      STACK[fmt_offs].u.vst = num_to_zstring(STACK[fmt_offs].num, "%.6g");
       STACK[fmt_offs].flags = ZF_STR;
     }
-    v->vst = num_to_zstring(v->num, STACK[fmt_offs].vst->str);
+    v->u.vst = num_to_zstring(v->num, STACK[fmt_offs].u.vst->str);
   } else {
     FATAL("Wrong or unknown type in to_str_fmt\n");
   }
@@ -2780,17 +2780,17 @@ static struct zvalue *to_str(struct zvalue *v)
 
 static void rx_zvalue_compile(regex_t **rx, struct zvalue *pat)
 {
-  if (IS_RX(pat)) *rx = pat->rx;
+  if (IS_RX(pat)) *rx = pat->u.rx;
   else {
     zvalue_dup_zstring(to_str(pat));
-    escape_str(pat->vst->str, 1);
-    xregcomp(*rx, pat->vst->str, REG_EXTENDED);
+    escape_str(pat->u.vst->str, 1);
+    xregcomp(*rx, pat->u.vst->str, REG_EXTENDED);
   }
 }
 
 static void rx_zvalue_free(regex_t *rx, struct zvalue *pat)
 {
-  if (!IS_RX(pat) || rx != pat->rx) regfree(rx);
+  if (!IS_RX(pat) || rx != pat->u.rx) regfree(rx);
 }
 
 // Used by the match/not match ops (~ !~) and implicit $0 match (/regex/)
@@ -2799,7 +2799,7 @@ static int match(struct zvalue *zvsubject, struct zvalue *zvpat)
   int r;
   regex_t rx, *rxp = &rx;
   rx_zvalue_compile(&rxp, zvpat);
-  if ((r = regexec(rxp, to_str(zvsubject)->vst->str, 0, 0, 0)) != 0) {
+  if ((r = regexec(rxp, to_str(zvsubject)->u.vst->str, 0, 0, 0)) != 0) {
     if (r != REG_NOMATCH) {
       char errbuf[256];
       regerror(r, &rx, errbuf, sizeof(errbuf));
@@ -2852,7 +2852,7 @@ static int rx_find_FS(regex_t *rx, char *s, regoff_t *start, regoff_t *end, int 
 static int get_int_val(struct zvalue *v)
 {
   if (IS_NUM(v)) return (int)v->num;
-  if (IS_STR(v) && v->vst) return (int)atof(v->vst->str);
+  if (IS_STR(v) && v->u.vst) return (int)atof(v->u.vst->str);
   return 0;
 }
 
@@ -2885,14 +2885,14 @@ static void set_map_element(struct zmap *m, int k, char *val, size_t len)
   struct zstring *key = num_to_zstring(k, "");// "" vs 0 format avoids warning
   struct zmap_slot *zs = zmap_find_or_insert_key(m, key);
   zstring_release(&key);
-  zs->val.vst = zstring_update(zs->val.vst, 0, val, len);
+  zs->val.u.vst = zstring_update(zs->val.u.vst, 0, val, len);
   zs->val.flags = ZF_STR;
   check_numeric_string(&zs->val);
 }
 
 static void set_zvalue_str(struct zvalue *v, char *s, size_t size)
 {
-  v->vst = zstring_update(v->vst, 0, s, size);
+  v->u.vst = zstring_update(v->u.vst, 0, s, size);
   v->flags = ZF_STR;
 }
 
@@ -2922,14 +2922,14 @@ static int splitter(void (*setter)(struct zmap *, int, char *, size_t), struct z
 {
   regex_t *rx;
   regoff_t offs, end;
-  int multiline_null_rs = !ENSURE_STR(&STACK[RS])->vst->str[0];
+  int multiline_null_rs = !ENSURE_STR(&STACK[RS])->u.vst->str[0];
   int nf = 0, r = 0, eflag = 0;
   int one_char_fs = 0;
   char *s0 = s, *fs = "";
   if (!IS_RX(zvfs)) {
     to_str(zvfs);
-    fs = zvfs->vst->str;
-    one_char_fs = utf8cnt(zvfs->vst->str, zvfs->vst->size) == 1;
+    fs = zvfs->u.vst->str;
+    one_char_fs = utf8cnt(zvfs->u.vst->str, zvfs->u.vst->size) == 1;
   }
   // Empty string or empty fs (regex).
   // Need to include !*s b/c empty string, otherwise
@@ -2949,7 +2949,7 @@ static int splitter(void (*setter)(struct zmap *, int, char *, size_t), struct z
     }
     return nf;
   }
-  if (IS_RX(zvfs)) rx = zvfs->rx;
+  if (IS_RX(zvfs)) rx = zvfs->u.rx;
   else rx = rx_fs_prep(fs);
   while (*s) {
     // Find the next occurrence of FS.
@@ -2977,7 +2977,7 @@ static int splitter(void (*setter)(struct zmap *, int, char *, size_t), struct z
 
 static void build_fields(void)
 {
-  char *rec = FIELD[0].vst->str;
+  char *rec = FIELD[0].u.vst->str;
   // TODO test this -- why did I not want to split empty $0?
   // Maybe don't split empty $0 b/c non-default FS gets NF==1 with splitter()?
   set_nf(*rec ? splitter(set_field, 0, rec, to_str(&STACK[FS])) : 0);
@@ -2985,26 +2985,26 @@ static void build_fields(void)
 
 static void rebuild_field0(void)
 {
-  struct zstring *s = FIELD[0].vst;
+  struct zstring *s = FIELD[0].u.vst;
   int nf = TT.nf_internal;
   if (!nf) {
     zvalue_copy(&FIELD[0], &uninit_string_zvalue);
     return;
   }
-  // uninit value needed for eventual reference to .vst in zstring_release()
+  // uninit value needed for eventual reference to .u.vst in zstring_release()
   struct zvalue tempv = uninit_zvalue;
   zvalue_copy(&tempv, to_str(&STACK[OFS]));
   for (int i = 1; i <= nf; i++) {
     if (i > 1) {
-      s = s ? zstring_extend(s, tempv.vst) : zstring_copy(s, tempv.vst);
+      s = s ? zstring_extend(s, tempv.u.vst) : zstring_copy(s, tempv.u.vst);
     }
     if (FIELD[i].flags) to_str(&FIELD[i]);
-    if (FIELD[i].vst) {
-      if (i > 1) s = zstring_extend(s, FIELD[i].vst);
-      else s = zstring_copy(s, FIELD[i].vst);
+    if (FIELD[i].u.vst) {
+      if (i > 1) s = zstring_extend(s, FIELD[i].u.vst);
+      else s = zstring_copy(s, FIELD[i].u.vst);
     }
   }
-  FIELD[0].vst = s;
+  FIELD[0].u.vst = s;
   FIELD[0].flags |= ZF_STR;
   zvalue_release_zstring(&tempv);
 }
@@ -3033,7 +3033,7 @@ static struct zvalue *get_field_ref(int fnum)
 // Called by tksplit op
 static int split(struct zstring *s, struct zvalue *a, struct zvalue *fs)
 {
-  return splitter(set_map_element, a->map, s->str, fs);
+  return splitter(set_map_element, a->u.map, s->str, fs);
 }
 
 // Called by getrec_f0_f() and getrec_f0()
@@ -3128,7 +3128,7 @@ static int popnumval(void)
 
 static void drop(void)
 {
-  if (!(STKP->flags & (ZF_ANYMAP | ZF_RX))) zstring_release(&STKP->vst);
+  if (!(STKP->flags & (ZF_ANYMAP | ZF_RX))) zstring_release(&STKP->u.vst);
   STKP--;
 }
 
@@ -3151,7 +3151,7 @@ static int get_set_logical(void)
   force_maybemap_to_scalar(v);
   int r = 0;
   if (IS_NUM(v)) r = !! v->num;
-  else if (IS_STR(v)) r = (v->vst && v->vst->str[0]);
+  else if (IS_STR(v)) r = (v->u.vst && v->u.vst->str[0]);
   zvalue_release_zstring(v);
   v->num = r;
   v->flags = ZF_NUM;
@@ -3165,7 +3165,7 @@ static double to_num(struct zvalue *v)
   if (v->flags & ZF_NUMSTR) zvalue_release_zstring(v);
   else if (!IS_NUM(v)) {
     v->num = 0.0;
-    if (IS_STR(v) && v->vst) v->num = atof(v->vst->str);
+    if (IS_STR(v) && v->u.vst) v->num = atof(v->u.vst->str);
     zvalue_release_zstring(v);
   }
   v->flags = ZF_NUM;
@@ -3174,7 +3174,7 @@ static double to_num(struct zvalue *v)
 
 static void set_num(struct zvalue *v, double n)
 {
-  zstring_release(&v->vst);
+  zstring_release(&v->u.vst);
   v->num = n;
   v->flags = ZF_NUM;
 }
@@ -3192,7 +3192,7 @@ static void push_int_val(ptrdiff_t n)
 
 static struct zvalue *get_map_val(struct zvalue *v, struct zvalue *key)
 {
-  struct zmap_slot *x = zmap_find_or_insert_key(v->map, to_str(key)->vst);
+  struct zmap_slot *x = zmap_find_or_insert_key(v->u.map, to_str(key)->u.vst);
   return &x->val;
 }
 
@@ -3250,11 +3250,11 @@ static int fflush_file(int nargs)
 
   to_str(STKP);   // filename at top of TT.stack
   // Null string means flush all
-  if (!STKP[0].vst->str[0]) return fflush_all();
+  if (!STKP[0].u.vst->str[0]) return fflush_all();
 
   // is it open in file table?
   for (struct zfile *p = TT.zfiles; p; p = p->next)
-    if (!strcmp(STKP[0].vst->str, p->fn))
+    if (!strcmp(STKP[0].u.vst->str, p->fn))
       if (!fflush(p->fp)) return 0;
   return -1;    // error, or file not found in table
 }
@@ -3286,7 +3286,7 @@ static struct zfile badfile_obj, *badfile = &badfile_obj;
 static struct zfile *setup_file(char file_or_pipe, char *mode)
 {
   to_str(STKP);   // filename at top of TT.stack
-  char *fn = STKP[0].vst->str;
+  char *fn = STKP[0].u.vst->str;
   // is it already open in file table?
   for (struct zfile *p = TT.zfiles; p; p = p->next)
     if (!strcmp(fn, p->fn)) {
@@ -3341,7 +3341,7 @@ static void varprint(int(*fpvar)(FILE *, const char *, ...), FILE *outfp, int na
   int k, nn, nnc, fmtc, holdc, cnt1 = 0, cnt2 = 0;
   char *s = 0;  // to shut up spurious warning
   regoff_t offs = -1, e = -1;
-  char *pfmt, *fmt = to_str(STKP-nargs+1)->vst->str;
+  char *pfmt, *fmt = to_str(STKP-nargs+1)->u.vst->str;
   k = stkn(nargs - 2);
   while (*fmt) {
     double n = 0;
@@ -3379,12 +3379,12 @@ static void varprint(int(*fpvar)(FILE *, const char *, ...), FILE *outfp, int na
       case 1:
         if (k > stkn(0)) FATAL("too few args for printf\n");
         if (fmtc == 's') {
-          s = to_str(&STACK[k++])->vst->str;
+          s = to_str(&STACK[k++])->u.vst->str;
         } else if (fmtc == 'c' && !IS_NUM(&STACK[k])) {
           unsigned wch;
           struct zvalue *z = &STACK[k++];
-          if (z->vst && z->vst->str[0])
-            n = utf8towc(&wch, z->vst->str, z->vst->size) < 1 ? 0xfffd : wch;
+          if (z->u.vst && z->u.vst->str[0])
+            n = utf8towc(&wch, z->u.vst->str, z->u.vst->size) < 1 ? 0xfffd : wch;
         } else {
           n = to_num(&STACK[k++]);
         }
@@ -3451,9 +3451,9 @@ static int assign_global(char *var, char *value)
 // via -v option or by assignment_arg() it will here be assigned a string value.
 // So first, remove all map data to prevent memory leak. BUG FIX // 2024-02-13.
     if (v->flags & ZF_ANYMAP) {
-      zmap_delete_map_incl_slotdata(v->map);
-      xfree(v->map);
-      v->map = 0;
+      zmap_delete_map_incl_slotdata(v->u.map);
+      xfree(v->u.map);
+      v->u.map = 0;
       v->flags &= ~ZF_ANYMAP;
     }
 
@@ -3494,11 +3494,11 @@ static char *nextfilearg(void)
     if (++TT.rgl.narg >= (int)to_num(&STACK[ARGC])) return 0;
     struct zvalue *v = &STACK[ARGV];
     struct zvalue zkey = ZVINIT(ZF_STR, 0,
-        num_to_zstring(TT.rgl.narg, to_str(&STACK[CONVFMT])->vst->str));
+        num_to_zstring(TT.rgl.narg, to_str(&STACK[CONVFMT])->u.vst->str));
     arg = "";
-    if (zmap_find(v->map, zkey.vst)) {
+    if (zmap_find(v->u.map, zkey.u.vst)) {
       zvalue_copy(&TT.rgl.cur_arg, to_str(get_map_val(v, &zkey)));
-      arg = TT.rgl.cur_arg.vst->str;
+      arg = TT.rgl.cur_arg.u.vst->str;
     }
     zvalue_release_zstring(&zkey);
   } while (!*arg || assignment_arg(arg));
@@ -3516,7 +3516,7 @@ static int next_fp(void)
     TT.cfile->fp = stdin;
     TT.cfile->fn = "-";
     zvalue_release_zstring(&STACK[FILENAME]);
-    STACK[FILENAME].vst = new_zstring("-", 1);
+    STACK[FILENAME].u.vst = new_zstring("-", 1);
   } else if (fn) {
     xfree(TT.cfile->buf);
     *TT.cfile = (struct zfile){0};
@@ -3568,9 +3568,9 @@ static ssize_t getr(struct zfile *zfp, int rs_mode)
   regoff_t so = 0, eo = 0;
   size_t m = 0, n = 0;
 
-  xregcomp(&rsrx, rs_mode ? "\n\n+" : fmt_one_char_fs(STACK[RS].vst->str),
+  xregcomp(&rsrx, rs_mode ? "\n\n+" : fmt_one_char_fs(STACK[RS].u.vst->str),
       REG_EXTENDED);
-  rs_mode = strlen(STACK[RS].vst->str) == 1 ? STACK[RS].vst->str[0] : 0;
+  rs_mode = strlen(STACK[RS].u.vst->str) == 1 ? STACK[RS].u.vst->str[0] : 0;
   for ( ;; ) {
     if (zfp->ro == zfp->lim && zfp->eof) break; // EOF & last record; return -1
 
@@ -3628,7 +3628,7 @@ static ssize_t getr(struct zfile *zfp, int rs_mode)
 static ssize_t getrec_f(struct zfile *zfp)
 {
   int k;
-  if (ENSURE_STR(&STACK[RS])->vst->str[0]) return getr(zfp, 0);
+  if (ENSURE_STR(&STACK[RS])->u.vst->str[0]) return getr(zfp, 0);
   // RS == "" so multiline read
   // Passing 1 to getr() forces multiline mode, which uses regex "\n\n+" to
   // split on sequences of 2 or more newlines. But that's not the same as
@@ -3687,8 +3687,8 @@ static int awk_getline(int source, struct zfile *zfp, struct zvalue *v)
   if (is_stream && !zfp->fp) return -1;
   if (v) {
     if ((k = is_stream ? getrec_f(zfp) : getrec()) < 0) return 0;
-    zstring_release(&v->vst);
-    v->vst = new_zstring(TT.rgl.recptr, k);
+    zstring_release(&v->u.vst);
+    v->u.vst = new_zstring(TT.rgl.recptr, k);
     v->flags = ZF_STR;
     check_numeric_string(v);    // bug fix 20240514
     if (!is_stream) {
@@ -3726,8 +3726,8 @@ static void gsub(int opcode, int nargs, int parmbase)
   to_str(repl);
   to_str(v);
 
-#define SLEN(zvalp) ((zvalp)->vst->size)
-  char *p, *rp0 = repl->vst->str, *rp = rp0, *s = v->vst->str;
+#define SLEN(zvalp) ((zvalp)->u.vst->size)
+  char *p, *rp0 = repl->u.vst->str, *rp = rp0, *s = v->u.vst->str;
   int namps = 0, nhits = 0, is_sub = (opcode == tksub), eflags = 0;
   regoff_t so = -1, eo;
   // Count ampersands in repl string; may be overcount due to \& escapes.
@@ -3789,11 +3789,11 @@ static void gsub(int opcode, int nargs, int parmbase)
     e += s + SLEN(v) - ep0;
     *e = 0;
     z->size = e - z->str;
-    zstring_release(&v->vst);
-    v->vst = z;
+    zstring_release(&v->u.vst);
+    v->u.vst = z;
   }
   rx_zvalue_free(rxp, ere);
-  if (!IS_RX(STKP-2)) zstring_release(&STKP[-2].vst);
+  if (!IS_RX(STKP-2)) zstring_release(&STKP[-2].u.vst);
   drop_n(3);
   push_int_val(nhits);
   if (field_num >= 0) fixup_fields(field_num);
@@ -3865,7 +3865,7 @@ static int interpx(int start, int *status)
       case tkcat:
         to_str(STKP-1);
         to_str(STKP);
-        STKP[-1].vst = zstring_extend(STKP[-1].vst, STKP[0].vst);
+        STKP[-1].u.vst = zstring_extend(STKP[-1].u.vst, STKP[0].u.vst);
         drop();
         break;
 
@@ -3907,7 +3907,7 @@ static int interpx(int start, int *status)
             case tkge: cmp = STKP[-1].num >= STKP[0].num; break;
           }
         } else {
-          cmp = strcmp(to_str(STKP-1)->vst->str, to_str(STKP)->vst->str);
+          cmp = strcmp(to_str(STKP-1)->u.vst->str, to_str(STKP)->u.vst->str);
           switch (opcode) {
             case tklt: cmp = cmp < 0; break;
             case tkle: cmp = cmp <= 0; break;
@@ -4041,24 +4041,24 @@ static int interpx(int start, int *status)
           break;
         }
         if (!nargs) {
-          fprintf(outfp->fp, "%s", to_str(&FIELD[0])->vst->str);
+          fprintf(outfp->fp, "%s", to_str(&FIELD[0])->u.vst->str);
         } else {
           struct zvalue tempv = uninit_zvalue;
           zvalue_copy(&tempv, &STACK[OFS]);
           to_str(&tempv);
           for (int k = 0; k < nargs; k++) {
-            if (k) fprintf(outfp->fp, "%s", tempv.vst->str);
+            if (k) fprintf(outfp->fp, "%s", tempv.u.vst->str);
             int sp = stkn(nargs - 1 - k);
             ////// FIXME refcnt -- prob. don't need to copy from TT.stack?
             v = &STACK[sp];
             to_str_fmt(v, OFMT);
-            struct zstring *zs = v->vst;
+            struct zstring *zs = v->u.vst;
             fprintf(outfp->fp, "%s", zs ? zs->str : "");
           }
           zvalue_release_zstring(&tempv);
           drop_n(nargs);
         }
-        fputs(ENSURE_STR(&STACK[ORS])->vst->str, outfp->fp);
+        fputs(ENSURE_STR(&STACK[ORS])->u.vst->str, outfp->fp);
         break;
 
       case opdrop:
@@ -4125,8 +4125,8 @@ static int interpx(int start, int *status)
         // release any map data created.
         while (stkn(0) > parmbase + nargs) {
           if ((STKP)->flags & ZF_ANYMAP) {
-            zmap_delete_map_incl_slotdata((STKP)->map);
-            xfree((STKP)->map);
+            zmap_delete_map_incl_slotdata((STKP)->u.map);
+            xfree((STKP)->u.map);
           }
           drop();
         }
@@ -4161,11 +4161,11 @@ static int interpx(int start, int *status)
           to_str(STKP);
           push_val(&STACK[SUBSEP]);
           to_str(STKP);
-          STKP[-1].vst = zstring_extend(STKP[-1].vst, STKP->vst);
+          STKP[-1].u.vst = zstring_extend(STKP[-1].u.vst, STKP->u.vst);
           drop();
           swap();
           to_str(STKP);
-          STKP[-1].vst = zstring_extend(STKP[-1].vst, STKP->vst);
+          STKP[-1].u.vst = zstring_extend(STKP[-1].u.vst, STKP->u.vst);
           drop();
         }
         break;
@@ -4177,10 +4177,10 @@ static int interpx(int start, int *status)
         v = &STACK[k];
         force_maybemap_to_map(v);
         if (opcode == opmapdelete) {
-          zmap_delete_map(v->map);
+          zmap_delete_map(v->u.map);
         } else {
           drop();
-          zmap_delete(v->map, to_str(STKP)->vst);
+          zmap_delete(v->u.map, to_str(STKP)->u.vst);
         }
         drop();
         break;
@@ -4198,7 +4198,7 @@ static int interpx(int start, int *status)
 
       case tkin:
         if (!(STKP->flags & ZF_ANYMAP)) FATAL("scalar in array context");
-        v = zmap_find(STKP->map, to_str(STKP-1)->vst);
+        v = zmap_find(STKP->u.map, to_str(STKP-1)->u.vst);
         drop();
         drop();
         push_int_val(v ? 1 : 0);
@@ -4209,7 +4209,7 @@ static int interpx(int start, int *status)
         v = STKP-1;
         force_maybemap_to_map(v);
         if (!IS_MAP(v)) FATAL("scalar in array context");
-        struct zmap *m = v->map;   // Need for MAPSLOT macro
+        struct zmap *m = v->u.map;   // Need for MAPSLOT macro
         int zlen = zlist_len(&m->slot);
         int kk = STKP->num + 1;
         while (kk < zlen && !(MAPSLOT[kk].key)) // skip deleted slots
@@ -4218,9 +4218,9 @@ static int interpx(int start, int *status)
         if (kk < zlen) {
           struct zvalue *var = setup_lvalue(2, parmbase, &field_num);
           var->flags = ZF_STR;
-          zstring_release(&var->vst);
-          var->vst = MAPSLOT[kk].key;
-          zstring_incr_refcnt(var->vst);
+          zstring_release(&var->u.vst);
+          var->u.vst = MAPSLOT[kk].key;
+          zstring_incr_refcnt(var->u.vst);
           ip += op2;
         }
         break;
@@ -4299,7 +4299,7 @@ static int interpx(int start, int *status)
         break;
 
       case opprintrec:
-        puts(to_str(&FIELD[0])->vst->str);
+        puts(to_str(&FIELD[0])->u.vst->str);
         break;
 
       case oprange1:
@@ -4381,11 +4381,11 @@ static int interpx(int start, int *status)
       case tksplit:
         nargs = *ip++;
         if (nargs == 2) push_val(&STACK[FS]);
-        struct zstring *s = to_str(STKP-2)->vst;
+        struct zstring *s = to_str(STKP-2)->u.vst;
         force_maybemap_to_map(STKP-1);
         struct zvalue *a = STKP-1;
         struct zvalue *fs = STKP;
-        zmap_delete_map(a->map);
+        zmap_delete_map(a->u.map);
         k = split(s, a, fs);
         drop_n(3);
         push_int_val(k);
@@ -4397,15 +4397,15 @@ static int interpx(int start, int *status)
         regex_t rx_pat, *rxp = &rx_pat;
         rx_zvalue_compile(&rxp, STKP);
         regoff_t rso = 0, reo = 0;  // shut up warning (may be uninit)
-        k = rx_find(rxp, to_str(STKP-1)->vst->str, &rso, &reo, 0);
+        k = rx_find(rxp, to_str(STKP-1)->u.vst->str, &rso, &reo, 0);
         rx_zvalue_free(rxp, STKP);
         // Force these to num before setting.
         to_num(&STACK[RSTART]);
         to_num(&STACK[RLENGTH]);
         if (k) STACK[RSTART].num = 0, STACK[RLENGTH].num = -1;
         else {
-          reo = utf8cnt(STKP[-1].vst->str, reo);
-          rso = utf8cnt(STKP[-1].vst->str, rso);
+          reo = utf8cnt(STKP[-1].u.vst->str, reo);
+          rso = utf8cnt(STKP[-1].u.vst->str, rso);
           STACK[RSTART].num = rso + 1, STACK[RLENGTH].num = reo - rso;
         }
         drop();
@@ -4420,7 +4420,7 @@ static int interpx(int start, int *status)
 
       case tksubstr:
         nargs = *ip++;
-        struct zstring *zz = to_str(STKP - nargs + 1)->vst;
+        struct zstring *zz = to_str(STKP - nargs + 1)->u.vst;
         int nchars = utf8cnt(zz->str, zz->size);  // number of utf8 codepoints
         // Offset of start of string (in chars not bytes); convert 1-based to 0-based
         ssize_t mm = CLAMP(trunc(to_num(STKP - nargs + 2)) - 1, 0, nchars);
@@ -4429,15 +4429,15 @@ static int interpx(int start, int *status)
         mm = bytesinutf8(zz->str, zz->size, mm);
         nn = bytesinutf8(zz->str + mm, zz->size - mm, nn);
         struct zstring *zzz = new_zstring(zz->str + mm, nn);
-        zstring_release(&(STKP - nargs + 1)->vst);
-        (STKP - nargs + 1)->vst = zzz;
+        zstring_release(&(STKP - nargs + 1)->u.vst);
+        (STKP - nargs + 1)->u.vst = zzz;
         drop_n(nargs - 1);
         break;
 
       case tkindex:
         nargs = *ip++;
-        char *s1 = to_str(STKP-1)->vst->str;
-        char *s3 = strstr(s1, to_str(STKP)->vst->str);
+        char *s1 = to_str(STKP-1)->u.vst->str;
+        char *s3 = strstr(s1, to_str(STKP)->u.vst->str);
         ptrdiff_t offs = s3 ? utf8cnt(s1, s3 - s1) + 1 : 0;
         drop();
         drop();
@@ -4465,7 +4465,7 @@ static int interpx(int start, int *status)
       case tktolower:
       case tktoupper:
         nargs = *ip++;
-        struct zstring *z = to_str(STKP)->vst;
+        struct zstring *z = to_str(STKP)->u.vst;
         unsigned zzlen = z->size + 4; // Allow for expansion
         zz = zstring_update(0, zzlen, "", 0);
         char *p = z->str, *e = z->str + z->size, *q = zz->str;
@@ -4489,17 +4489,17 @@ static int interpx(int start, int *status)
         *q = 0;
         zz->size = q - zz->str;
         zstring_release(&z);
-        STKP->vst = zz;
+        STKP->u.vst = zz;
         break;
 
       case tklength:
         nargs = *ip++;
         v = nargs ? STKP : &FIELD[0];
         force_maybemap_to_map(v);
-        if (IS_MAP(v)) k = v->map->count - v->map->deleted;
+        if (IS_MAP(v)) k = v->u.map->count - v->u.map->deleted;
         else {
           to_str(v);
-          k = utf8cnt(v->vst->str, v->vst->size);
+          k = utf8cnt(v->u.vst->str, v->u.vst->size);
         }
         if (nargs) drop();
         push_int_val(k);
@@ -4509,7 +4509,7 @@ static int interpx(int start, int *status)
         nargs = *ip++;
         fflush(stdout);
         fflush(stderr);
-        r = system(to_str(STKP)->vst->str);
+        r = system(to_str(STKP)->u.vst->str);
 #ifdef WEXITSTATUS
         // WEXITSTATUS is in sys/wait.h, but I'm not including that.
         // It seems to also be in stdlib.h in gcc and musl-gcc.
@@ -4529,7 +4529,7 @@ static int interpx(int start, int *status)
 
       case tkclose:
         nargs = *ip++;
-        r = close_file(to_str(STKP)->vst->str);
+        r = close_file(to_str(STKP)->u.vst->str);
         drop();
         push_int_val(r);
         break;
@@ -4598,7 +4598,7 @@ static int interp(int start, int *status)
 
 static void insert_argv_map(struct zvalue *map, int key, char *value)
 {
-  struct zvalue zkey = ZVINIT(ZF_STR, 0, num_to_zstring(key, ENSURE_STR(&STACK[CONVFMT])->vst->str));
+  struct zvalue zkey = ZVINIT(ZF_STR, 0, num_to_zstring(key, ENSURE_STR(&STACK[CONVFMT])->u.vst->str));
   struct zvalue *v = get_map_val(map, &zkey);
   zvalue_release_zstring(&zkey);
   zvalue_release_zstring(v);
@@ -4623,8 +4623,8 @@ static void init_globals(int optind, int argc, char **argv, char *sepstring,
     if (!pval) continue;
     struct zvalue zkey = ZVINIT(ZF_STR, 0, new_zstring(*pkey, pval - *pkey));
     struct zvalue *v = get_map_val(&m, &zkey);
-    zstring_release(&zkey.vst);
-    if (v->vst) FFATAL("env var dup? (%s)", pkey);
+    zstring_release(&zkey.u.vst);
+    if (v->u.vst) FFATAL("env var dup? (%s)", pkey);
     *v = new_str_val(++pval);    // FIXME refcnt
     check_numeric_string(v);
   }
@@ -4710,7 +4710,7 @@ static void free_literal_regex(void)
 {
   int len = zlist_len(&TT.literals);
   for (int k = 1; k < len; k++)
-    if (IS_RX(&LITERAL[k])) regfree(LITERAL[k].rx);
+    if (IS_RX(&LITERAL[k])) regfree(LITERAL[k].u.rx);
 }
 
 static void run(int optind, int argc, char **argv, char *sepstring,
