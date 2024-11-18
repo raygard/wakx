@@ -272,7 +272,7 @@ static int splitter(void (*setter)(struct zmap *, int, char *, size_t), struct z
   // split("", a, "x") splits to a 1-element (empty element) array
   if (!*s || (IS_STR(zvfs) && !*fs) || IS_EMPTY_RX(zvfs)) {
     while (*s) {
-      if (*s < 128) setter(m, ++nf, s++, 1);
+      if (*(unsigned char *)s < 128) setter(m, ++nf, s++, 1);
       else {        // Handle UTF-8
         char cbuf[8];
         unsigned wc;
