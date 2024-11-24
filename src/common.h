@@ -40,6 +40,7 @@ extern char **environ;    // needed outside toybox with gcc ?
 // https://www.msys2.org/wiki/Porting/
 #if !(defined(__unix__) || defined(linux))
 #  define __USE_MINGW_ANSI_STDIO            1
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 #endif
 
 #endif  // FOR_TOYBOX
@@ -127,7 +128,7 @@ struct compiler_globals {
 struct zvalue {
   unsigned flags;
   double num;
-  union { // anonymous union not in C99; not going to fix it now.
+  union {
     struct zstring *vst;
     struct zmap *map;
     regex_t *rx;
@@ -342,9 +343,6 @@ struct zmap {
 #define XERR(format, ...) zzerr(format, __VA_ARGS__)
 
 #define NO_EXIT_STATUS  (9999987)  // value unlikely to appear in exit stmt
-
-ssize_t getline(char **lineptr, size_t *n, FILE *stream);
-ssize_t getdelim(char ** restrict lineptr, size_t * restrict n, int delimiter, FILE *stream);
 
 #define EXTERN extern
 #ifndef FOR_TOYBOX
