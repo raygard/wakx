@@ -46,19 +46,6 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 #endif
 
 #endif  // FOR_TOYBOX
-#ifdef __GNUC__
-#ifndef MONOLITHIC
-#define ATTR_UNUSED_FUNCTION __attribute__ ((unused))
-#define ATTR_UNUSED_VAR __attribute__ ((unused))
-#endif // MONOLITHIC
-#define ATTR_FALLTHROUGH_INTENDED __attribute__ ((fallthrough))
-#else
-#ifndef MONOLITHIC
-#define ATTR_UNUSED_FUNCTION
-#define ATTR_UNUSED_VAR
-#endif // MONOLITHIC
-#define ATTR_FALLTHROUGH_INTENDED
-#endif
 
 #ifndef FOR_TOYBOX
 #define maxof(a,b) ((a)>(b)?(a):(b))

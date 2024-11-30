@@ -420,7 +420,7 @@ static void builtin_call(int tk, char *builtin_name)
         scan();
         num_args++;
       }
-      ATTR_FALLTHROUGH_INTENDED;
+      /* fall through */
 
     default:
       if (ISTOK(tkrparen)) break;

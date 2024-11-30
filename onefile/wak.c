@@ -43,11 +43,6 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 #endif
 
 #endif  // FOR_TOYBOX
-#ifdef __GNUC__
-#define ATTR_FALLTHROUGH_INTENDED __attribute__ ((fallthrough))
-#else
-#define ATTR_FALLTHROUGH_INTENDED
-#endif
 
 #ifndef FOR_TOYBOX
 #define maxof(a,b) ((a)>(b)?(a):(b))
@@ -1683,7 +1678,7 @@ static void builtin_call(int tk, char *builtin_name)
         scan();
         num_args++;
       }
-      ATTR_FALLTHROUGH_INTENDED;
+      /* fall through */
 
     default:
       if (ISTOK(tkrparen)) break;
@@ -3373,10 +3368,10 @@ static void varprint(int(*fpvar)(FILE *, const char *, ...), FILE *outfp, int na
         break;
       case 3:
         cnt1 = getcnt(k++);
-        ATTR_FALLTHROUGH_INTENDED;
+        /* fall through */
       case 2:
         cnt2 = getcnt(k++);
-        ATTR_FALLTHROUGH_INTENDED;
+        /* fall through */
       case 1:
         if (k > stkn(0)) FATAL("too few args for printf\n");
         if (fmtc == 's') {
@@ -4261,7 +4256,7 @@ static int interpx(int start, int *status)
 
       case tkwhile:
         (STKP)->num = ! get_set_logical();
-        ATTR_FALLTHROUGH_INTENDED;
+        /* fall through */
         // FALLTHROUGH to tkternif
       case tkif:
         // FALLTHROUGH to tkternif
@@ -4329,7 +4324,7 @@ static int interpx(int start, int *status)
         r = popnumval();
         if (r != NO_EXIT_STATUS) *status = (int)r & 255;
         // TODO FIXME do we need NO_EXIT_STATUS at all? Just use 0?
-        ATTR_FALLTHROUGH_INTENDED;
+        /* fall through */
       case tknext:
       case tknextfile:
         return opcode;
