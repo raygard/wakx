@@ -4,8 +4,13 @@
 // vi: tabstop=2 softtabstop=2 shiftwidth=2
 
 #ifndef FOR_TOYBOX
+#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#error Need C99 or greater
+#endif
+// Need _POSIX_C_SOURCE >=1 for fileno(); >=2 for popen()/pclose()
+#define _POSIX_C_SOURCE 2
 #ifndef __STDC_WANT_LIB_EXT2__
-#define __STDC_WANT_LIB_EXT2__ 1  // for getline(), getdelim()
+#define __STDC_WANT_LIB_EXT2__ 1  // for getline()
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,9 +31,6 @@
 // for getopt_long():
 #include <getopt.h>
 #include <regex.h>
-#if defined(__unix__) || defined(linux)
-#include <langinfo.h>
-#endif
 extern char **environ;    // needed outside toybox with gcc ?
 
 // __USE_MINGW_ANSI_STDIO will have MinGW use its own printf format system?
@@ -37,6 +39,7 @@ extern char **environ;    // needed outside toybox with gcc ?
 // https://www.msys2.org/wiki/Porting/
 #if !(defined(__unix__) || defined(linux))
 #  define __USE_MINGW_ANSI_STDIO            1
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 #endif
 
 #endif  // FOR_TOYBOX
@@ -116,7 +119,7 @@ struct compiler_globals {
 struct zvalue {
   unsigned flags;
   double num;
-  union { // anonymous union not in C99; not going to fix it now.
+  union {
     struct zstring *vst;
     struct zmap *map;
     regex_t *rx;
@@ -332,9 +335,6 @@ struct zmap {
 
 #define NO_EXIT_STATUS  (9999987)  // value unlikely to appear in exit stmt
 
-ssize_t getline(char **lineptr, size_t *n, FILE *stream);
-ssize_t getdelim(char ** restrict lineptr, size_t * restrict n, int delimiter, FILE *stream);
-
 #ifndef FOR_TOYBOX
 
 // Common (global) data
@@ -443,9 +443,9 @@ static int utf8towc(unsigned *wc, char *str, unsigned len)
   char *s, c;
 
   // fast path ASCII
-  if (len && *str<128) return !!(*wc = *str);
+  if (len && *(unsigned char *)str<128) return !!(*wc = *str);
 
-  result = first = *(s = str++);
+  result = first = *(unsigned char *)(s = str++);
   if (result<0xc2 || result>0xf4) return -1;
   for (mask = 6; (first&0xc0)==0xc0; mask += 5, first <<= 1) {
     if (!--len) return -2;
@@ -924,7 +924,7 @@ static int get_char(void)
   static char *nl = "\n";
   // On first entry, TT.scs->p points to progstring if any, or null string.
   for (;;) {
-    int c = *(TT.scs->p)++;
+    int c = *(unsigned char *)(TT.scs->p)++;
     if (c) {
       return c;
     }
@@ -2936,7 +2936,7 @@ static int splitter(void (*setter)(struct zmap *, int, char *, size_t), struct z
   // split("", a, "x") splits to a 1-element (empty element) array
   if (!*s || (IS_STR(zvfs) && !*fs) || IS_EMPTY_RX(zvfs)) {
     while (*s) {
-      if (*s < 128) setter(m, ++nf, s++, 1);
+      if (*(unsigned char *)s < 128) setter(m, ++nf, s++, 1);
       else {        // Handle UTF-8
         char cbuf[8];
         unsigned wc;
@@ -3094,6 +3094,7 @@ static struct jkiss_state {
   unsigned x, y, z, c;
 } jkst = {123456789, 987654321, 43219876, 6543217}; /* Seed variables */
 
+/* Public domain code for JKISS RNG */
 static unsigned int jkiss(void)
 {
   unsigned long long t;
@@ -4827,6 +4828,9 @@ int main(int argc, char **argv)
 
   struct option longopts[] = {{"version", 0, 0, 'V'}, {"help", 0, 0, 'h'}, {0}};
   
+  char *p = setlocale(LC_CTYPE, "");
+  if (!p || !strstr(p, "UTF-8")) p = setlocale(LC_CTYPE, "C.UTF-8");
+  if (!p || !strstr(p, "UTF-8")) p = setlocale(LC_CTYPE, "en_US.UTF-8");
   while ((opt = getopt_long(argc, argv, "F:f:v:Vbch", longopts, 0)) != -1) {
     switch (opt) {
       case 'F':
@@ -4864,20 +4868,6 @@ int main(int argc, char **argv)
     }
     progstring = argv[optind++];
   }
-#if defined(__unix__) || defined(linux)
-  // Toybox main.c does this, so do we.
-  // Try user's locale, but if that isn't UTF-8 merge in a UTF-8 locale's
-  // character type data. (Fall back to en_US for MacOS.)
-  setlocale(LC_CTYPE, "");
-  //  if (strcmp("UTF-8", nl_langinfo(CODESET)))
-  //    uselocale(newlocale(LC_CTYPE_MASK, "C.UTF-8", 0) ? :
-  //      newlocale(LC_CTYPE_MASK, "en_US.UTF-8", 0));
-  // Avoid -pedantic warning for gcc extension on :? operator
-  if (strcmp("UTF-8", nl_langinfo(CODESET))) {
-    locale_t h = newlocale(LC_CTYPE_MASK, "C.UTF-8", 0);
-    uselocale(h ? h : newlocale(LC_CTYPE_MASK, "en_US.UTF-8", 0));
-  }
-#endif
 
   retval = awk(sepstring, progstring, prog_args, assign_args, optind,
        argc, argv, opt_run_prog);

@@ -7,8 +7,13 @@
 
 #endif // MONOLITHIC
 #ifndef FOR_TOYBOX
+#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#error Need C99 or greater
+#endif
+// Need _POSIX_C_SOURCE >=1 for fileno(); >=2 for popen()/pclose()
+#define _POSIX_C_SOURCE 2
 #ifndef __STDC_WANT_LIB_EXT2__
-#define __STDC_WANT_LIB_EXT2__ 1  // for getline(), getdelim()
+#define __STDC_WANT_LIB_EXT2__ 1  // for getline()
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,9 +34,6 @@
 // for getopt_long():
 #include <getopt.h>
 #include <regex.h>
-#if defined(__unix__) || defined(linux)
-#include <langinfo.h>
-#endif
 extern char **environ;    // needed outside toybox with gcc ?
 
 // __USE_MINGW_ANSI_STDIO will have MinGW use its own printf format system?

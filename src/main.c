@@ -91,6 +91,9 @@ int main(int argc, char **argv)
 
   struct option longopts[] = {{"version", 0, 0, 'V'}, {"help", 0, 0, 'h'}, {0}};
   
+  char *p = setlocale(LC_CTYPE, "");
+  if (!p || !strstr(p, "UTF-8")) p = setlocale(LC_CTYPE, "C.UTF-8");
+  if (!p || !strstr(p, "UTF-8")) p = setlocale(LC_CTYPE, "en_US.UTF-8");
   while ((opt = getopt_long(argc, argv, "F:f:v:Vbch", longopts, 0)) != -1) {
     switch (opt) {
       case 'F':
@@ -128,20 +131,6 @@ int main(int argc, char **argv)
     }
     progstring = argv[optind++];
   }
-#if defined(__unix__) || defined(linux)
-  // Toybox main.c does this, so do we.
-  // Try user's locale, but if that isn't UTF-8 merge in a UTF-8 locale's
-  // character type data. (Fall back to en_US for MacOS.)
-  setlocale(LC_CTYPE, "");
-  //  if (strcmp("UTF-8", nl_langinfo(CODESET)))
-  //    uselocale(newlocale(LC_CTYPE_MASK, "C.UTF-8", 0) ? :
-  //      newlocale(LC_CTYPE_MASK, "en_US.UTF-8", 0));
-  // Avoid -pedantic warning for gcc extension on :? operator
-  if (strcmp("UTF-8", nl_langinfo(CODESET))) {
-    locale_t h = newlocale(LC_CTYPE_MASK, "C.UTF-8", 0);
-    uselocale(h ? h : newlocale(LC_CTYPE_MASK, "en_US.UTF-8", 0));
-  }
-#endif
 
   retval = awk(sepstring, progstring, prog_args, assign_args, optind,
        argc, argv, opt_run_prog);

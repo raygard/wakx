@@ -12,7 +12,7 @@ CC = gcc
 
 MUSLCC = /usr/local/musl/bin/musl-gcc
 
-CFLAGS = -O3 -std=c99 -Wall -Wextra -W -Wpointer-arith -Wstrict-prototypes -D_POSIX_C_SOURCE=200809L
+CFLAGS = -O3 -std=c99 -Wall -Wextra -W -Wpointer-arith -Wstrict-prototypes -Wpedantic
 
 # Order is significant for monolithic source wak.c and toybox awk!
 SRC = ./src/lib.c ./src/common.c ./src/scan.c ./src/compile.c ./src/run.c ./src/main.c
@@ -90,11 +90,13 @@ toy: ./toybox/awk
 # toybox maintainer R. Landley prefers "string" + int over &("string"[int])
 # also: second line of sed command reverts the anonymous union removal
 # (i.e. restores the anonymous union in struct zvalue for toybox\awk.c)
+# Also reverts casts removing (unsigned char *) (toybox default already)
 ./toybox/awk: ./onefile/wak.c
 	@mkdir -p $(@D)
 	awk -f ./scripts/make_toybox_awk.awk ./onefile/wak.c | \
 		sed -e 's/\&(\("[^"]*"\)\[\([^]]*\)\]);.*/\1 + \2;/' \
-		-e 's/\.u\././g' -e 's/->u./->/g' -e 's/} u;/};/' -e '/struct zvalue {/,/union/ s,union.*,union { // anonymous union not in C99; not going to fix it now.,' > $@.c
+		-e 's/\.u\././g' -e 's/->u./->/g' -e 's/} u;/};/' -e '/struct zvalue {/,/union/ s,union.*,union { // anonymous union not in C99; not going to fix it now.,' \
+		-e 's/(unsigned char \*)//' > $@.c
 
 clean:
 	-rm wak prwak aswak mwak muwak mmuwak

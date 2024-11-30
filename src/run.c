@@ -430,6 +430,7 @@ static struct jkiss_state {
   unsigned x, y, z, c;
 } jkst = {123456789, 987654321, 43219876, 6543217}; /* Seed variables */
 
+/* Public domain code for JKISS RNG */
 static unsigned int jkiss(void)
 {
   unsigned long long t;
